@@ -1,26 +1,24 @@
-mod game;
-mod snake;
 mod food;
+mod game;
 mod helpers;
+mod snake;
 
-use std::collections::LinkedList;
+use std::io::Write;
 
 use glutin_window::GlutinWindow as Window;
-use opengl_graphics::{GlGraphics, OpenGL};
-use piston::event_loop::{EventSettings, Events, EventLoop};
-use piston::input::{RenderEvent, UpdateEvent, ButtonEvent};
+use opengl_graphics::OpenGL;
+use piston::event_loop::{EventLoop, EventSettings, Events};
+use piston::input::{ButtonEvent, RenderEvent, UpdateEvent};
 use piston::window::WindowSettings;
 
 use game::Game;
-use snake::{Snake, SnakePiece};
-use food::Food;
-use helpers::Direction;
+use helpers::Status;
 
 fn main() {
     let opengl = OpenGL::V3_2;
 
-    const COLS: u32 = 30;
-    const ROWS: u32 = 20;
+    const COLS: u32 = 40;
+    const ROWS: u32 = 30;
     const SQUARE_WIDTH: u32 = 20;
 
     const SCREEN_WIDTH: u32 = COLS * SQUARE_WIDTH;
@@ -32,37 +30,41 @@ fn main() {
         .build()
         .unwrap();
 
-    let mut snake_parts = LinkedList::new();
-    snake_parts.push_back(SnakePiece(ROWS / 2, COLS / 2));
-
-    let mut game = Game {
-        gl: GlGraphics::new(opengl),
-        rows: ROWS,
-        cols: COLS,
-        square_width: SQUARE_WIDTH,
-        snake: Snake {
-            gl: GlGraphics::new(opengl),
-            parts: snake_parts,
-            width:  SQUARE_WIDTH,
-            d: Direction::DOWN
-        },
-        food: Food(1, 1),
-        just_eaten: false
-    };
+    let mut game = Game::new(opengl, ROWS, COLS, SQUARE_WIDTH, 0);
 
     let mut events = Events::new(EventSettings::new());
     events.set_ups(10);
-    while let Some(e) = events.next(&mut window) {
-        if let Some(render_args) = e.render_args() {
-            game.render(&render_args);
-        }
 
-        if let Some(update_args) = e.update_args() {
-            game.update(&update_args);
+    while let Some(e) = events.next(&mut window) {
+        if game.status == Status::NORMAL {
+            if let Some(render_args) = e.render_args() {
+                game.render(&render_args);
+            }
+
+            if let Some(_update_args) = e.update_args() {
+                if !game.update() {
+                    game.status = Status::OVER;
+                    std::io::stdout()
+                        .write_all(
+                            b"\nGame Over! Press [Esc] to exit or [Space] to start over...\n",
+                        )
+                        .expect("Writing to stdout failed");
+                }
+            }
         }
 
         if let Some(button_args) = e.button_args() {
-            game.handle_keypress(button_args.button);
+            if game.status == Status::OVER
+                && button_args.button == piston::Button::Keyboard(piston::Key::Space)
+            {
+                println!("Restarting");
+                let best_score = game.best_score;
+                game = Game::new(opengl, ROWS, COLS, SQUARE_WIDTH, best_score);
+            } else {
+                game.handle_keypress(button_args.button);
+            }
         }
     }
+
+    println!("\nBest score: {}", game.best_score);
 }
